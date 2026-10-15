@@ -1,0 +1,287 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>F1 레이스카 3D 분해도</title>
+<style>
+html,body{margin:0;height:100%;background:#06070a;color:#eee;font-family:-apple-system,"Apple SD Gothic Neo","Noto Sans KR",sans-serif;overflow:hidden}
+canvas{display:block;touch-action:none}
+header{position:fixed;top:16px;left:20px;pointer-events:none}
+header h1{margin:0;font-weight:800;letter-spacing:.18em;font-size:15px;color:#c6ff3d}
+header p{margin:5px 0 0;font-size:12px;color:#8a8f99}
+#cnt{position:fixed;top:16px;right:20px;text-align:right;pointer-events:none}
+#cnt b{display:block;font-size:30px;font-weight:200;color:#fff}#cnt span{font-size:11px;color:#8a8f99;letter-spacing:.15em}
+#info{position:fixed;top:84px;right:20px;font-size:13px;color:#c6ff3d;text-align:right;min-height:18px;max-width:60vw}
+#ui{position:fixed;left:50%;bottom:14px;transform:translateX(-50%);width:min(96vw,760px);display:flex;flex-direction:column;gap:9px;align-items:center}
+.row{display:flex;flex-wrap:wrap;gap:6px;justify-content:center}
+button{background:rgba(255,255,255,.06);color:#ddd;border:1px solid rgba(255,255,255,.16);padding:8px 13px;border-radius:999px;font-size:12.5px;backdrop-filter:blur(8px);cursor:pointer}
+button.on{background:#2a3d00;border-color:#c6ff3d;color:#fff}
+label{font-size:12px;color:#aaa;display:flex;gap:8px;align-items:center;width:100%;max-width:440px}
+input[type=range]{flex:1;accent-color:#c6ff3d}
+@media(max-width:600px){header p{display:none}button{padding:7px 10px;font-size:12px}}
+</style></head><body>
+<header><h1>FORMULA RACER · 3D</h1><p>오리지널 디자인 F1 레이스카 · 드래그 회전 · 휠 확대 · 부품 터치 시 이름 표시</p></header>
+<div id="cnt"><b id="n">0</b><span>PARTS</span></div><div id="info"></div>
+<div id="ui">
+<div class="row" id="groups"></div>
+<label>분해 <input id="sl" type="range" min="0" max="100" value="0"></label>
+<div class="row"><button id="ex">분해</button><button id="as">조립</button><button id="rot" class="on">자동 회전</button><button id="reset">처음 시점</button></div>
+</div>
+<script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}</script>
+<script type="module">
+import * as THREE from 'three';
+import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+import {RoomEnvironment} from 'three/addons/environments/RoomEnvironment.js';
+import {RoundedBoxGeometry} from 'three/addons/geometries/RoundedBoxGeometry.js';
+
+const R=new THREE.WebGLRenderer({antialias:true,preserveDrawingBuffer:true});R.setPixelRatio(Math.min(devicePixelRatio,2));R.setSize(innerWidth,innerHeight);
+R.toneMapping=THREE.ACESFilmicToneMapping;R.toneMappingExposure=1;R.shadowMap.enabled=true;R.shadowMap.type=THREE.PCFSoftShadowMap;document.body.appendChild(R.domElement);
+const scene=new THREE.Scene();scene.background=new THREE.Color(0x06070a);scene.fog=new THREE.Fog(0x06070a,16,34);
+scene.environment=new THREE.PMREMGenerator(R).fromScene(new RoomEnvironment(),0.04).texture;
+const cam=new THREE.PerspectiveCamera(35,innerWidth/innerHeight,.1,100);
+const ctl=new OrbitControls(cam,R.domElement);ctl.enableDamping=true;ctl.autoRotate=true;ctl.autoRotateSpeed=.7;ctl.minDistance=2;ctl.maxDistance=22;ctl.maxPolarAngle=Math.PI*.495;
+const key=new THREE.DirectionalLight(0xffffff,2.2);key.position.set(4,9,5);key.castShadow=true;key.shadow.mapSize.set(2048,2048);Object.assign(key.shadow.camera,{left:-5,right:5,top:5,bottom:-5});scene.add(key);
+const rim=new THREE.DirectionalLight(0x7fb0ff,1.6);rim.position.set(-6,4,-6);scene.add(rim);
+const fl=new THREE.Mesh(new THREE.CircleGeometry(14,64),new THREE.MeshStandardMaterial({color:0x0b0c0f,roughness:.8,envMapIntensity:.25}));fl.rotation.x=-Math.PI/2;fl.receiveShadow=true;scene.add(fl);
+const ring=new THREE.Mesh(new THREE.RingGeometry(3.6,3.63,128),new THREE.MeshBasicMaterial({color:0xc6ff3d,transparent:true,opacity:.3}));ring.rotation.x=-Math.PI/2;ring.position.y=.004;scene.add(ring);
+
+// carbon weave texture
+const cv=document.createElement('canvas');cv.width=cv.height=64;const cx=cv.getContext('2d');
+for(let y=0;y<8;y++)for(let x=0;x<8;x++){const g=cx.createLinearGradient(x*8,y*8,x*8+8,y*8+8);const a=((x+y)>>1)%2?['#2a2c30','#141518']:['#121315','#26282c'];g.addColorStop(0,a[0]);g.addColorStop(1,a[1]);cx.fillStyle=g;cx.fillRect(x*8,y*8,8,8);}
+const ctex=new THREE.CanvasTexture(cv);ctex.wrapS=ctex.wrapT=THREE.RepeatWrapping;ctex.repeat.set(6,6);ctex.colorSpace=THREE.SRGBColorSpace;
+const M={
+ paint:new THREE.MeshPhysicalMaterial({color:0x0c1a3a,metalness:.55,roughness:.3,clearcoat:1,clearcoatRoughness:.06}),
+ accent:new THREE.MeshPhysicalMaterial({color:0xb6f21f,metalness:.2,roughness:.35,clearcoat:1}),
+ white:new THREE.MeshPhysicalMaterial({color:0xe8eaee,metalness:.1,roughness:.35,clearcoat:1}),
+ carbon:new THREE.MeshPhysicalMaterial({map:ctex,metalness:.4,roughness:.38,clearcoat:.8,clearcoatRoughness:.15}),
+ tyre:new THREE.MeshStandardMaterial({color:0x151517,roughness:.92,metalness:0}),
+ yellow:new THREE.MeshStandardMaterial({color:0xffd21a,roughness:.6}),
+ rim:new THREE.MeshStandardMaterial({color:0x1d1f24,metalness:.9,roughness:.35}),
+ alu:new THREE.MeshStandardMaterial({color:0xb9bec7,metalness:1,roughness:.28}),
+ ti:new THREE.MeshStandardMaterial({color:0x8d8a84,metalness:1,roughness:.4}),
+ gold:new THREE.MeshStandardMaterial({color:0xd7a947,metalness:1,roughness:.25}),
+ brake:new THREE.MeshStandardMaterial({color:0x2b2b2d,metalness:.3,roughness:.75}),
+ red:new THREE.MeshStandardMaterial({color:0xc4141c,metalness:.5,roughness:.35}),
+ black:new THREE.MeshStandardMaterial({color:0x0e0e10,metalness:.3,roughness:.6}),
+ orange:new THREE.MeshStandardMaterial({color:0xff7a1a,metalness:.2,roughness:.5}),
+ glass:new THREE.MeshPhysicalMaterial({color:0x99aabb,metalness:1,roughness:.02}),
+ blue:new THREE.MeshStandardMaterial({color:0x2a64d8,metalness:.6,roughness:.4}),
+};
+for(const k in M)M[k].side=THREE.DoubleSide;
+const GN={body:'차체',cockpit:'콕핏',aero:'에어로',susp:'서스펜션',wheel:'바퀴·브레이크',pu:'파워유닛'};
+const pieces=[];const root=new THREE.Group();scene.add(root);
+function add(geo,mat,p,r,name,grp,par=root){const m=new THREE.Mesh(geo,M[mat]);m.position.set(...p);if(r)m.rotation.set(...r);m.castShadow=m.receiveShadow=true;m.userData={name,grp,mat};par.add(m);pieces.push(m);return m;}
+const box=(w,h,d,r=.2)=>new RoundedBoxGeometry(w,h,d,2,Math.min(w,h,d)*r);
+const cyl=(a,b,h,s=24)=>new THREE.CylinderGeometry(a,b,h,s);
+// loft: sections [x, width(z), height(y), yCenter], superellipse power
+function loft(S,pw=3.2,n=28,bot=1){const pos=[],uv=[],idx=[];
+ S.forEach((s,i)=>{for(let j=0;j<=n;j++){const t=j/n*Math.PI*2,c=Math.cos(t),sn=Math.sin(t);
+  let yy=Math.sign(sn)*Math.pow(Math.abs(sn),2/pw)*s[2]/2;if(yy<0)yy*=bot;
+  pos.push(s[0],s[3]+yy,Math.sign(c)*Math.pow(Math.abs(c),2/pw)*s[1]/2);uv.push(i/(S.length-1),j/n);}});
+ for(let i=0;i<S.length-1;i++)for(let j=0;j<n;j++){const a=i*(n+1)+j,b=a+n+1;idx.push(a,b,a+1,b,b+1,a+1);}
+ for(const [i,sg] of [[0,1],[S.length-1,-1]]){const c=pos.length/3;pos.push(S[i][0],S[i][3],0);uv.push(.5,.5);
+  for(let j=0;j<n;j++){const a=i*(n+1)+j;sg>0?idx.push(c,a+1,a):idx.push(c,a,a+1);}}
+ const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));g.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));g.setIndex(idx);g.computeVertexNormals();return g;}
+// airfoil extruded along z (span)
+function foil(ch,th,span,camber=.04){const s=new THREE.Shape();const N=18,up=[],lo=[];
+ for(let i=0;i<=N;i++){const x=(1-Math.cos(i/N*Math.PI))/2;const t=5*th*(.2969*Math.sqrt(x)-.126*x-.3516*x*x+.2843*x**3-.1036*x**4);const c=camber*4*x*(1-x);up.push([x,c+t]);lo.push([x,c-t]);}
+ s.moveTo(-up[0][0]*ch+ch/2,up[0][1]*ch);up.forEach(p=>s.lineTo(-p[0]*ch+ch/2,p[1]*ch));lo.reverse().forEach(p=>s.lineTo(-p[0]*ch+ch/2,p[1]*ch));
+ const g=new THREE.ExtrudeGeometry(s,{depth:span,bevelEnabled:false});g.translate(0,0,-span/2);return g;}
+function rod(a,b,r,mat,name,grp){const A=new THREE.Vector3(...a),B=new THREE.Vector3(...b);const L=A.distanceTo(B);
+ const m=add(cyl(r,r,L,10),mat,[0,0,0],null,name,grp);m.position.copy(A).add(B).multiplyScalar(.5);m.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),B.clone().sub(A).normalize());return m;}
+function plateShape(pts,th){const s=new THREE.Shape();s.moveTo(...pts[0]);pts.slice(1).forEach(p=>s.lineTo(...p));const g=new THREE.ExtrudeGeometry(s,{depth:th,bevelEnabled:false});g.translate(0,0,-th/2);return g;}
+const SD=[[1,'우측'],[-1,'좌측']];
+
+/* ===== 차체 (BODY) ===== */
+add(loft([[2.72,.1,.07,.24],[2.55,.18,.13,.27],[2.2,.26,.2,.33],[1.85,.34,.28,.38],[1.6,.4,.33,.41]],2.6),'paint',[0,0,0],null,'노즈콘','body');
+add(loft([[2.73,.08,.05,.24],[2.62,.13,.08,.25]],2.4),'accent',[0,0,0],null,'노즈 팁','body');
+add(loft([[1.6,.4,.33,.41],[1.2,.5,.44,.44],[.8,.62,.5,.45],[.3,.74,.56,.45],[-.1,.8,.6,.44]],3.4),'paint',[0,0,0],null,'모노코크(서바이벌 셀)','body');
+add(loft([[.95,.5,.08,.71],[.75,.56,.1,.72],[.3,.6,.11,.73],[.05,.56,.1,.74]],2.2),'black',[0,0,0],null,'콕핏 개구부','cockpit');
+add(loft([[.05,.66,.62,.68],[-.15,.66,.62,.72],[-.5,.64,.56,.66],[-.9,.6,.48,.6],[-1.3,.42,.36,.52],[-1.85,.16,.2,.46],[-2.05,.1,.12,.44]],2.8),'paint',[0,0,0],null,'엔진 커버','body');
+add(plateShape([[0,0],[-.9,0],[-1.3,.05],[-1.6,.0],[-1.7,-.05],[-.3,-.05]],.012),'paint',[-.3,1.02,0],null,'샤크 핀','body');
+add(plateShape([[0,0],[-1.1,0],[-1.5,.06],[-1.55,.02],[-.1,-.04]],.014),'accent',[-.35,1.02,0],null,'샤크 핀 스트라이프','body');
+add(loft([[.12,.3,.26,.98],[-.02,.36,.3,.98],[-.25,.3,.24,.96]],2.6),'carbon',[0,0,0],null,'에어박스(롤후프)','body');
+add(loft([[.125,.22,.18,.99],[.11,.24,.2,.99]],2.4),'black',[0,0,0],null,'에어박스 흡입구','body');
+for(const [s,n] of SD){
+ add(loft([[.55,.36,.38,.36],[.2,.4,.42,.36],[-.3,.36,.4,.36],[-.8,.24,.3,.34],[-1.3,.12,.18,.3]],3,28,.9),'paint',[0,0,s*.5],null,n+' 사이드포드','body');
+ add(loft([[.57,.33,.08,.52],[.5,.36,.09,.52]],2),'accent',[0,0,s*.5],null,n+' 사이드포드 상단 스트라이프','body');
+ add(loft([[.58,.28,.28,.38],[.54,.32,.3,.38]],3),'black',[0,0,s*.5],null,n+' 사이드포드 흡입구','body');
+ add(box(.08,.3,.34),'ti',[.4,.36,s*.5],[0,s*.35,0],n+' 라디에이터 코어','body');
+ for(let i=0;i<10;i++)add(box(.06,.012,.32,.3),'alu',[.4,.23+i*.028,s*.5],[0,s*.35,0],n+` 라디에이터 핀 ${i+1}`,'body');
+ add(box(.05,.22,.24),'alu',[-.1,.4,s*.48],[0,s*.2,0],n+' 오일쿨러','body');
+ add(loft([[.85,.02,.06,.7],[.78,.03,.06,.73]],2),'paint',[0,0,s*.42],null,n+' 미러 스테이','body');
+ add(box(.1,.07,.17,.4),'paint',[.8,.76,s*.47],null,n+' 미러 하우징','body');
+ add(box(.01,.055,.15,.3),'glass',[.75,.76,s*.47],null,n+' 미러 유리','body');
+ add(plateShape([[0,0],[.25,0],[.15,.14],[0,.16]],.02),'carbon',[-1.0,.62,s*.17],[0,0,0],n+' 냉각 루버 패널','body');
+ for(let i=0;i<5;i++)add(box(.12,.01,.06,.3),'black',[-.2-i*.12,.63-i*.025,s*.3],[0,0,-.1],n+` 냉각 루버 ${i+1}`,'body');
+}
+add(box(.16,.02,.06),'accent',[2.2,.43,0],[0,0,-.18],'노즈 카메라','body');
+add(box(.05,.04,.07),'black',[.15,1.15,0],null,'온보드 카메라(T-캠)','body');
+add(box(.04,.08,.02),'red',[-2.12,.42,0],null,'후방 레인 라이트','body');
+add(box(.24,.05,.2),'black',[-.3,.86,.0],null,'콕핏 뒤 패널','body');
+
+/* ===== 콕핏 ===== */
+// halo
+const hc=new THREE.CatmullRomCurve3([[.05,.66,-.3],[.2,.84,-.29],[.45,.88,-.22],[.6,.88,0],[.45,.88,.22],[.2,.84,.29],[.05,.66,.3]].map(p=>new THREE.Vector3(...p)));
+add(new THREE.TubeGeometry(hc,60,.028,12),'ti',[0,0,0],null,'헤일로(Halo)','cockpit');
+add(loft([[.85,.05,.03,.72],[.7,.06,.04,.8],[.6,.06,.04,.87]],2),'ti',[0,0,0],null,'헤일로 센터 필러','cockpit');
+add(new THREE.TubeGeometry(hc,60,.031,12,false),'paint',[0,.003,0],null,'헤일로 페어링','cockpit').scale.set(1,1,.98);
+add(box(.5,.12,.4,.4),'black',[.25,.5,0],null,'드라이버 시트','cockpit');
+add(box(.12,.34,.42,.4),'black',[.0,.62,0],[0,0,-.3],'시트 등받이','cockpit');
+add(box(.08,.12,.42,.4),'black',[-.04,.82,0],null,'헤드레스트','cockpit');
+add(box(.2,.05,.38,.4),'carbon',[.7,.64,0],[0,0,.1],'대시 패널','cockpit');
+add(box(.025,.12,.26,.4),'carbon',[.6,.7,0],[0,0,-.35],'스티어링 휠','cockpit');
+add(box(.01,.05,.09,.2),'blue',[.583,.725,0],[0,0,-.35],'스티어링 디스플레이','cockpit');
+for(let i=0;i<8;i++)add(cyl(.008,.008,.012,8),['red','accent','white','orange'][i%4],[.587,.69+(i>>2)*.06,-.09+(i%4)*.06],[0,0,Math.PI/2-.35],`스티어링 버튼 ${i+1}`,'cockpit');
+for(const [s,n] of SD)add(box(.015,.05,.03),'ti',[.59,.68,s*.115],[0,0,-.35],n+' 시프트 패들','cockpit');
+add(cyl(.015,.015,.25,10),'ti',[.72,.63,0],[0,0,Math.PI/2+.25],'스티어링 칼럼','cockpit');
+add(box(.12,.05,.06),'alu',[1.35,.4,.06],null,'가속 페달','cockpit');
+add(box(.12,.05,.06),'alu',[1.35,.4,-.06],null,'브레이크 페달','cockpit');
+add(box(.06,.06,.06),'gold',[.45,.72,.0],null,'소화기 버튼','cockpit');
+add(box(.42,.36,.6,.3),'black',[-.25,.42,0],null,'연료탱크(셀)','cockpit');
+add(cyl(.03,.03,.06),'alu',[-.1,.62,.24],null,'연료 주입구','cockpit');
+
+/* ===== 에어로 ===== */
+// floor
+add(plateShape([[1.25,.2],[.9,.45],[.5,.75],[-1.2,.78],[-1.7,.55],[-1.7,-.55],[-1.2,-.78],[.5,-.75],[.9,-.45],[1.25,-.2]],.025),'carbon',[0,.05,0],[Math.PI/2,0,0],'플로어','aero');
+add(box(1.9,.02,.12),'carbon',[-.2,.045,0],null,'플랭크(스키드 블록)','aero');
+for(let i=0;i<6;i++)add(cyl(.03,.03,.022,12),'ti',[.6-i*.3,.046,0],null,`스키드 블록 ${i+1}`,'aero');
+for(const [s,n] of SD){
+ add(plateShape([[0,0],[1.6,0],[1.6,.06],[0,.04]],.012),'carbon',[-1.2,.06,s*.79],null,n+' 플로어 엣지 윙','aero');
+ for(let i=0;i<4;i++)add(plateShape([[0,0],[.5,0],[.45,.12],[.05,.1]],.01),'carbon',[.75-i*.08,.06,s*(.3+i*.07)],[0,s*.15,0],n+` 플로어 펜스 ${i+1}`,'aero');
+ add(plateShape([[0,0],[.5,0],[.3,.25],[0,.28]],.01),'carbon',[.3,.18,s*.72],null,n+' 바지보드','aero');
+ for(let i=0;i<3;i++)add(foil(.16,.08,.08),'carbon',[-1.3+i*.05,.12+i*.04,s*(.62+i*.04)],[0,0,0],n+` 플로어 엣지 윙렛 ${i+1}`,'aero');
+}
+// diffuser
+add(plateShape([[0,0],[-.6,.22],[-.6,.26],[0,.03]],1.0),'carbon',[-1.62,.05,0],null,'디퓨저','aero');
+for(let i=0;i<6;i++){const z=-.45+i*.18;add(plateShape([[0,0],[-.6,.22],[-.6,.3],[0,.04]],.008),'carbon',[-1.62,.05,z],null,`디퓨저 스트레이크 ${i+1}`,'aero');}
+// front wing
+add(foil(.32,.09,1.5,.06),'carbon',[2.6,.12,0],[0,0,.08],'프런트윙 메인플레인','aero');
+for(const [s,n] of SD){
+ for(let i=0;i<3;i++)add(foil(.2-.03*i,.08,.62-i*.05,.07),i==2?'accent':'carbon',[2.39-i*.13,.18+i*.06,s*(.42+i*.025)],[0,0,.25+i*.18],n+` 프런트윙 플랩 ${i+1}`,'aero');
+ add(plateShape([[0,0],[.55,0],[.6,.1],[.45,.24],[0,.28],[-.05,.2]],.012),'carbon',[2.15,.07,s*.77],null,n+' 프런트윙 엔드플레이트','aero');
+ add(plateShape([[0,0],[.4,0],[.4,.03],[0,.03]],.08),'carbon',[2.2,.065,s*.73],null,n+' 엔드플레이트 풋플레이트','aero');
+ add(foil(.12,.08,.18),'carbon',[2.25,.33,s*.68],[0,0,.3],n+' 캐나드','aero');
+ add(box(.04,.05,.015),'ti',[2.45,.31,s*.62],null,n+' 플랩 조정 브래킷','aero');
+ for(let i=0;i<3;i++)add(box(.25,.06,.01,.3),'carbon',[2.1-i*.05,.3,s*(.25+i*.04)],[0,0,-.2],n+` 프런트 터닝 베인 ${i+1}`,'aero');
+}
+for(const [s,n] of SD)add(plateShape([[0,0],[.18,0],[.25,.2],[.08,.2]],.012),'carbon',[2.42,.13,s*.07],null,n+' 노즈 필러','aero');
+// rear wing
+add(foil(.3,.1,.94,.08),'carbon',[-2.3,.9,0],[0,0,.15],'리어윙 메인플레인','aero');
+add(foil(.2,.08,.92,.08),'accent',[-2.12,.98,0],[0,0,.55],'DRS 플랩','aero');
+add(box(.05,.07,.04),'black',[-2.2,.93,0],null,'DRS 액추에이터','aero');
+add(foil(.2,.1,.85,.06),'carbon',[-2.15,.4,0],[0,0,.15],'빔윙 하단','aero');
+add(foil(.16,.1,.8,.06),'carbon',[-2.05,.46,0],[0,0,.3],'빔윙 상단','aero');
+add(plateShape([[0,0],[-.04,.4],[.05,.62],[.12,.58],[.1,0]],.025),'carbon',[-2.15,.38,0],null,'리어윙 스완넥 필러','aero');
+for(const [s,n] of SD){
+ add(plateShape([[0,0],[.55,0],[.6,.15],[.5,.62],[.05,.6],[-.05,.3]],.014),'paint',[-2.55,.48,s*.48],null,n+' 리어윙 엔드플레이트','aero');
+ add(box(.4,.05,.016),'accent',[-2.3,1.05,s*.49],null,n+' 엔드플레이트 스트라이프','aero');
+ for(let i=0;i<3;i++)add(box(.12,.008,.02),'carbon',[-2.15,.6+i*.08,s*.5],[0,0,-.3],n+` 엔드플레이트 슬롯 ${i+1}`,'aero');
+ add(foil(.18,.1,.12),'carbon',[-1.2,.3,s*.62],[0,0,.3],n+' 리어 브레이크덕트 윙렛','aero');
+}
+
+/* ===== 서스펜션 & 바퀴 ===== */
+const AX=[[1.85,.78,'앞'],[-1.75,.76,'뒤']];
+for(const [x,z0,fr] of AX)for(const [s,n] of SD){const z=s*z0,P=`${n} ${fr}`,front=fr=='앞',W=front?.36:.42,Rr=.36;
+ const zi=z-s*(W/2+.05);
+ // wishbones
+ rod([x+.25,.6,s*.25],[x,.5,zi],.016,'carbon',P+' 상단 위시본 앞팔','susp');
+ rod([x-.25,.6,s*.25],[x,.5,zi],.016,'carbon',P+' 상단 위시본 뒷팔','susp');
+ rod([x+.3,.3,s*.22],[x,.22,zi],.016,'carbon',P+' 하단 위시본 앞팔','susp');
+ rod([x-.3,.3,s*.22],[x,.22,zi],.016,'carbon',P+' 하단 위시본 뒷팔','susp');
+ rod([x+(front?-.05:.05),front?.62:.28,s*.24],[x,front?.24:.5,zi],.013,'ti',P+(front?' 푸시로드':' 풀로드'),'susp');
+ rod([x+.15,.42,s*.24],[x+.1,.36,zi],.01,'ti',P+(front?' 스티어링 타이로드':' 토우 링크'),'susp');
+ add(box(.1,.34,.06),'ti',[x,.36,zi],null,P+' 업라이트','susp');
+ add(cyl(.03,.03,.06,12),'alu',[x,.36,zi+s*.03],[Math.PI/2,0,0],P+' 휠 허브 베어링','susp');
+ add(cyl(.02,.02,.14,10),'alu',[x+(front?-.1:.1),front?.6:.3,s*.15],[0,0,Math.PI/2],P+' 로커','susp');
+ add(cyl(.025,.025,.16,12),'gold',[x+(front?-.2:.2),front?.6:.3,s*.12],[0,0,Math.PI/2],P+' 댐퍼','susp');
+ add(new THREE.TorusGeometry(.03,.008,8,16),'red',[x+(front?-.2:.2),front?.6:.3,s*.12],[0,Math.PI/2,0],P+' 스프링','susp');
+ add(loft([[x+.18,.12,.2,.36],[x,.18,.26,.36],[x-.18,.12,.2,.36]],2.6),'carbon',[0,0,zi-s*.04],null,P+' 브레이크 덕트','susp');
+ // wheel group
+ const wg=new THREE.Group();wg.position.set(x,Rr,z);root.add(wg);
+ const prof=[];for(let i=0;i<=24;i++){const t=i/24*Math.PI*2;const c=Math.cos(t),sn=Math.sin(t);prof.push(new THREE.Vector2(.29+Math.sign(c)*Math.pow(Math.abs(c),.35)*.07,Math.sign(sn)*Math.pow(Math.abs(sn),.35)*W/2));}
+ const tg=new THREE.LatheGeometry(prof,64);tg.rotateX(Math.PI/2);
+ add(tg,'tyre',[0,0,0],null,P+' 타이어','wheel',wg);
+ for(const k of [1,-1])add(new THREE.TorusGeometry(.31,.006,6,64),'yellow',[0,0,k*(W/2+.004)],null,P+` 타이어 사이드월 컴파운드 띠 ${k>0?'바깥':'안쪽'}`,'wheel',wg);
+ add(cyl(.225,.225,W*.9,48,true),'rim',[0,0,0],[Math.PI/2,0,0],P+' 림 배럴','wheel',wg);
+ add(new THREE.CylinderGeometry(.225,.225,.012,48),'rim',[0,0,s*(W/2-.02)],[Math.PI/2,0,0],P+' 휠 커버','wheel',wg);
+ add(new THREE.TorusGeometry(.225,.009,8,64),'accent',[0,0,s*(W/2-.012)],null,P+' 림 립','wheel',wg);
+ for(let i=0;i<10;i++){const a=i/10*Math.PI*2;add(box(.16,.022,.02),'rim',[Math.cos(a)*.13,Math.sin(a)*.13,s*(W/2-.035)],[0,0,a],P+` 휠 스포크 ${i+1}`,'wheel',wg);}
+ add(cyl(.05,.05,.05,6),'red',[0,0,s*(W/2-.01)],[Math.PI/2,0,0],P+' 센터 휠너트','wheel',wg);
+ add(cyl(.17,.17,.032,40),'brake',[0,0,-s*.06],[Math.PI/2,0,0],P+' 카본 브레이크 디스크','wheel',wg);
+ add(new THREE.TorusGeometry(.1,.012,8,32),'ti',[0,0,-s*.06],null,P+' 디스크 벨','wheel',wg);
+ add(box(.12,.07,.07),'red',[-.12,.1,-s*.06],[0,0,.7],P+' 브레이크 캘리퍼','wheel',wg);
+ for(let i=0;i<2;i++)add(cyl(.012,.012,.02,10),'alu',[-.11+i*.05,.14-i*.04,-s*.1],[Math.PI/2,0,0],P+` 캘리퍼 피스톤 ${i+1}`,'wheel',wg);
+ add(cyl(.04,.04,.12,16),'ti',[0,0,-s*.04],[Math.PI/2,0,0],P+' 액슬','wheel',wg);
+ for(let i=0;i<6;i++){const a=i/6*Math.PI*2;add(cyl(.008,.008,.02,6),'alu',[Math.cos(a)*.1,Math.sin(a)*.1,-s*.04],[Math.PI/2,0,0],P+` 디스크 볼트 ${i+1}`,'wheel',wg);}
+}
+
+/* ===== 파워유닛 ===== */
+add(box(.72,.24,.3),'alu',[-.85,.3,0],null,'V6 엔진 블록(크랭크케이스)','pu');
+for(const [s,n] of SD){
+ add(box(.7,.18,.18),'alu',[-.85,.45,s*.1],[s*.5,0,0],n+' 실린더 뱅크','pu');
+ add(box(.7,.08,.16),'red',[-.85,.53,s*.16],[s*.5,0,0],n+' 실린더 헤드 커버','pu');
+ for(let i=0;i<3;i++){const xx=-.62-i*.23;
+  add(cyl(.035,.035,.07,14),'black',[xx,.57,s*.17],[s*.5,0,0],`${n} 이그니션 코일 ${i+1}`,'pu');
+  add(cyl(.03,.03,.18,12),'alu',[xx,.6,s*.07],[s*-.3,0,0],`${n} 흡기 러너 ${i+1}`,'pu');
+  rod([xx,.4,s*.25],[-1.3,.42,s*.32],.022,'gold',`${n} 배기 매니폴드 ${i+1}`,'pu');}
+}
+add(loft([[-.5,.3,.12,.72],[-1.2,.3,.12,.72]],3),'carbon',[0,0,0],null,'흡기 플레넘','pu');
+add(new THREE.TorusGeometry(.08,.04,12,32),'gold',[-1.32,.42,0],[0,Math.PI/2,0],'터보 터빈 하우징','pu');
+add(new THREE.TorusGeometry(.07,.035,12,32),'alu',[-.3,.5,0],[0,Math.PI/2,0],'터보 컴프레서 하우징','pu');
+add(cyl(.03,.03,1.0,16),'ti',[-.82,.5,0],[0,0,Math.PI/2],'터보 샤프트','pu');
+add(cyl(.07,.07,.16,24),'blue',[-1.0,.72,0],[0,0,Math.PI/2],'MGU-H','pu').position.set(-.82,.5,0);
+add(cyl(.08,.08,.2,24),'blue',[-.45,.22,.22],[Math.PI/2,0,0],'MGU-K','pu');
+add(box(.3,.18,.3),'ti',[-.18,.18,0],null,'에너지 스토어(배터리)','pu');
+for(let i=0;i<12;i++)add(box(.06,.03,.09),'orange',[-.28+(i%4)*.07,.29,-.1+Math.floor(i/4)*.1],null,`배터리 셀 모듈 ${i+1}`,'pu');
+add(box(.18,.06,.2),'black',[.0,.75,0.16],null,'컨트롤 일렉트로닉스(CE)','pu');
+add(box(.18,.12,.32),'alu',[-.35,.66,0],null,'인터쿨러','pu');
+add(cyl(.05,.07,.4,20),'gold',[-1.75,.48,0],[0,0,Math.PI/2+.25],'배기관(테일파이프)','pu');
+add(cyl(.025,.025,.3,12),'gold',[-1.6,.6,.08],[0,0,Math.PI/2+.4],'웨이스트게이트 파이프','pu');
+add(loft([[-1.25,.32,.28,.32],[-1.6,.26,.24,.3],[-2.0,.18,.18,.3]],3),'ti',[0,0,0],null,'기어박스 케이싱','pu');
+add(box(.12,.12,.36),'alu',[-1.75,.36,0],null,'디퍼렌셜','pu');
+add(cyl(.06,.06,.12,20),'gold',[-1.4,.25,0],[0,0,Math.PI/2],'클러치','pu');
+add(cyl(.04,.04,.08,12),'black',[-1.5,.5,.12],null,'유압 유닛','pu');
+add(box(.08,.1,.1),'black',[-1.1,.25,-.2],null,'오일탱크','pu');
+
+/* fasteners to fill */
+const TARGET=420;let bi=0;const hosts=pieces.filter(p=>['aero','body'].includes(p.userData.grp)&&p.userData.mat!='glass');
+while(pieces.length<TARGET&&bi<2000){const h=hosts[bi%hosts.length];bi++;h.geometry.computeBoundingBox();const bb=h.geometry.boundingBox;
+ const k=Math.floor(bi/hosts.length);const t=[.2,.8,.5,.35,.65][k%5];const p=[bb.min.x+(bb.max.x-bb.min.x)*t,bb.max.y,(bb.min.z+bb.max.z)/2+(bb.max.z-bb.min.z)*(k%2?.3:-.3)];
+ const b=new THREE.Mesh(cyl(.012,.012,.012,8),M.ti);b.position.set(...p);b.userData={name:h.userData.name+' 패스너 '+(k+1),grp:h.userData.grp};h.add(b);pieces.push(b);}
+
+/* explode setup */
+root.updateMatrixWorld(true);
+const gAx={body:[0,.9,0],cockpit:[0,1.6,0],aero:[0,.5,0],susp:[0,.2,.8],wheel:[0,0,.9],pu:[0,1.0,0]};
+for(const p of pieces)scene.attach(p);
+for(const p of pieces){const u=p.userData;u.home=p.position.clone();const wp=p.position.clone();
+ const ax=new THREE.Vector3(...gAx[u.grp]);ax.z*=Math.sign(wp.z||1);
+ const d=new THREE.Vector3(wp.x*.35,wp.y*.5,wp.z*.9).add(ax).add(new THREE.Vector3((Math.random()-.5)*.3,Math.random()*.3,(Math.random()-.5)*.3));
+ u.dir=d;u.rot0=p.rotation.clone();u.spin=new THREE.Euler((Math.random()-.5)*.6,(Math.random()-.5)*.6,(Math.random()-.5)*.6);
+ p.material=p.material.clone();p.material.transparent=true;u.base=p.material.emissive.clone();}
+document.getElementById('n').textContent=pieces.length;
+
+let target=0,cur=0,iso=null,sel=null;const sl=document.getElementById('sl'),exb=document.getElementById('ex'),asb=document.getElementById('as');
+const setT=v=>{target=v;sl.value=v*100;exb.classList.toggle('on',v>0);};
+sl.oninput=()=>setT(sl.value/100);exb.onclick=()=>setT(1);asb.onclick=()=>setT(0);
+const rb=document.getElementById('rot');rb.onclick=()=>{ctl.autoRotate=!ctl.autoRotate;rb.classList.toggle('on',ctl.autoRotate);};
+const gdiv=document.getElementById('groups');
+for(const [k,n] of [['all','전체'],...Object.entries(GN)]){const b=document.createElement('button');b.textContent=n;b.dataset.g=k;if(k=='all')b.classList.add('on');
+ b.onclick=()=>{iso=k=='all'?null:k;gdiv.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x==b));
+ document.getElementById('info').textContent=iso?`${n} 부품 ${pieces.filter(p=>p.userData.grp==k).length}개`:'';};gdiv.appendChild(b);}
+function frame(){const s=Math.max(1,2.1/(innerWidth/innerHeight));cam.position.set(4.6*s,2.6*s,5.6*s);ctl.target.set(0,.4,0);}
+document.getElementById('reset').onclick=frame;
+const ray=new THREE.Raycaster(),mp=new THREE.Vector2();let down=null;
+R.domElement.addEventListener('pointerdown',e=>down=[e.clientX,e.clientY]);
+R.domElement.addEventListener('pointerup',e=>{if(!down||Math.hypot(e.clientX-down[0],e.clientY-down[1])>6)return;
+ mp.set(e.clientX/innerWidth*2-1,-e.clientY/innerHeight*2+1);ray.setFromCamera(mp,cam);
+ const hit=ray.intersectObjects(pieces.filter(p=>!iso||p.userData.grp==iso),false)[0];
+ if(sel)sel.material.emissive.copy(sel.userData.base);sel=hit?hit.object:null;
+ document.getElementById('info').textContent=sel?`#${pieces.indexOf(sel)+1} · ${sel.userData.name} (${GN[sel.userData.grp]})`:'';
+ if(sel)sel.material.emissive.set(0x3d6a00);});
+addEventListener('resize',()=>{cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix();R.setSize(innerWidth,innerHeight);});
+const q=new URLSearchParams(location.hash.slice(1));if(q.get('ex')){setT(+q.get('ex'));cur=target;}if(q.get('g'))gdiv.querySelector(`[data-g=${q.get('g')}]`)?.click();if(q.get('still')){ctl.autoRotate=false;rb.classList.remove('on');}
+frame();if(q.get('cam')){const c=q.get('cam').split(',').map(Number);cam.position.set(...c);}
+R.setAnimationLoop(()=>{cur+=(target-cur)*.06;const t=cur<.5?2*cur*cur:1-Math.pow(-2*cur+2,2)/2;
+ for(const p of pieces){const u=p.userData;p.position.copy(u.home).addScaledVector(u.dir,t*.6);
+  p.rotation.set(u.rot0.x+u.spin.x*t,u.rot0.y+u.spin.y*t,u.rot0.z+u.spin.z*t);
+  const o=iso&&u.grp!=iso?.06:1;p.material.opacity+=(o-p.material.opacity)*.15;p.material.depthWrite=p.material.opacity>.5;}
+ ctl.update();R.render(scene,cam);});
+</script></body></html>
